@@ -18,7 +18,8 @@ Re-running the same command resumes and skips finished papers.
 
 ## Google Colab
 ```python
-!git clone <repo-url> && cd <repo>
+!git clone https://github.com/hhlearntocode/S2Crawler.git
+%cd S2Crawler
 !pip install -r src/requirements.txt
 %env S2_API_KEY=your_key        # or skip it: runs without a key, but very slow
 !python src/main.py 2310 12345 2311 00500 --out /content/data
