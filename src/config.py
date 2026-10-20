@@ -23,7 +23,7 @@ S2_BATCH_SIZE = 100          # API allows 500; smaller keeps responses light
 
 ARXIV_API = "https://export.arxiv.org/api/query"
 ARXIV_MIN_INTERVAL = 3.0     # arXiv etiquette: >= 3s between calls
-USER_AGENT = "KHDL-ArxivProject/1.0 (student crawler; mailto:hoangnguyen.123.dz@gmail.com)"
+USER_AGENT = "S2Crawler/1.0 (student crawler; mailto:hoangnguyen.123.dz@gmail.com)"
 
 REF_FIELDS = ",".join([
     "paperId", "externalIds", "venue", "referenceCount",
