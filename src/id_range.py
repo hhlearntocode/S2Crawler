@@ -62,8 +62,19 @@ def last_id_of_month(yymm: str) -> int:
     return lo
 
 
+def _check(month: str, n: int):
+    if len(month) != 4 or not month.isdigit() or not 1 <= int(month[2:]) <= 12:
+        raise ValueError(f"bad month {month!r}: expected YYMM, e.g. 2310")
+    if not 1 <= n <= 10 ** id_width(month) - 1:
+        raise ValueError(f"id {n} out of range for {month} ({id_width(month)}-digit ids)")
+
+
 def expand_range(start_month, start_id, end_month, end_id):
     start_id, end_id = int(start_id), int(end_id)
+    _check(start_month, start_id)
+    _check(end_month, end_id)
+    if (start_month, start_id) > (end_month, end_id):
+        raise ValueError("range start is after range end")
     if start_month == end_month:
         return [f"{start_month}.{n:0{id_width(start_month)}d}" for n in range(start_id, end_id + 1)]
     ids, month = [], start_month

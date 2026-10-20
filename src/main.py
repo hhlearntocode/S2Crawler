@@ -5,6 +5,8 @@ Example: python src/main.py 2310 12345 2311 00500
 import argparse
 import json
 import logging
+import os
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -14,24 +16,45 @@ from tqdm import tqdm
 
 import config
 from id_range import expand_range
-from s2_client import S2Client
+from ledger import Ledger
 from s2_refs import crawl_references
+from s2_source import S2Source
 
 
-class RamSampler(threading.Thread):
-    def __init__(self, interval=1.0):
+def dir_size(path: Path) -> int:
+    total = 0
+    for root, _, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.path.getsize(os.path.join(root, name))
+            except OSError:
+                pass
+    return total
+
+
+class ResourceSampler(threading.Thread):
+    """Samples process RSS every second and the output folder size every 5 s."""
+
+    def __init__(self, out: Path, interval=1.0):
         super().__init__(daemon=True)
-        self.proc, self.interval, self.samples, self._halt = psutil.Process(), interval, [], threading.Event()
+        self.out, self.interval = out, interval
+        self.proc, self.ram, self.disk, self._halt = psutil.Process(), [], [], threading.Event()
 
     def run(self):
+        tick = 0
         while not self._halt.is_set():
-            self.samples.append(self.proc.memory_info().rss)
+            self.ram.append(self.proc.memory_info().rss)
+            if tick % 5 == 0:
+                self.disk.append(dir_size(self.out))
+            tick += 1
             self._halt.wait(self.interval)
 
     def stop(self):
         self._halt.set()
         self.join()
-        return (max(self.samples, default=0), sum(self.samples) / max(len(self.samples), 1))
+        return {"peak_ram_bytes": max(self.ram, default=0),
+                "avg_ram_bytes": int(sum(self.ram) / max(len(self.ram), 1)),
+                "peak_disk_bytes": max(self.disk, default=0)}
 
 
 def main():
@@ -45,7 +68,8 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
     out = Path(args.out)
-    sampler = RamSampler()
+    out.mkdir(parents=True, exist_ok=True)
+    sampler = ResourceSampler(out)
     sampler.start()
     t0 = time.time()
 
@@ -53,23 +77,22 @@ def main():
     t_discovery = time.time() - t0
     print(f"{len(ids)} papers: {ids[0]} .. {ids[-1]}")
 
-    client = S2Client(out / "_state" / "s2_last_call")
+    ledger, source = Ledger(out), S2Source(out / "_state" / "s2_last_call")
     with tqdm(total=len(ids), unit="paper") as bar:
-        stats = crawl_references(ids, out, client, on_progress=bar.update)
+        run_stats = crawl_references(ids, ledger, source, on_progress=bar.update)
 
-    peak, avg = sampler.stop()
-    found = stats["ok"] + stats["ok_empty"]
-    attempted = found + stats["not_found"] + stats["error"]
-    stats.update({
-        "success_rate_pct": round(100 * found / max(attempted, 1), 2),
+    res = sampler.stop()
+    stats = {
+        "run": run_stats,                      # this invocation only
+        **ledger.summary(ids),                 # all ids, latest state (use these in the report)
         "start": [args.start_month, args.start_id], "end": [args.end_month, args.end_id],
-        "s2_requests": client.n_requests, "s2_429": client.n_429,
+        "s2_requests": source.n_requests, "s2_429": source.n_429,
         "discovery_seconds": round(t_discovery, 2),
         "wall_seconds": round(time.time() - t0, 2),
-        "peak_ram_bytes": peak, "avg_ram_bytes": int(avg),
-        "avg_refs_per_paper": round(stats["refs"] / max(found, 1), 2),
-        "pct_refs_with_arxiv": round(100 * stats["refs_with_arxiv"] / max(stats["refs"], 1), 2),
-    })
+        **res,
+        "final_output_bytes": sum(dir_size(d) for d in out.iterdir() if d.is_dir() and not d.name.startswith("_")),
+        "disk_free_bytes": shutil.disk_usage(out).free,
+    }
     log_dir = out / "_logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     with (log_dir / "s2_stats.jsonl").open("a") as f:

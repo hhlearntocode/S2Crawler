@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import config
+from ledger import Ledger
 
 
 def main():
@@ -15,8 +16,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     n = 0
     with (out / "references.jsonl").open("w") as f:
-        for path in sorted(Path(args.data).glob("*/references.json")):
-            doc = json.loads(path.read_text())
+        for doc in Ledger(args.data).papers():
             for r in doc["references"]:
                 if not r["arxiv_id"]:
                     continue

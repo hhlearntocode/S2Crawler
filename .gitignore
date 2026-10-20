@@ -4,3 +4,5 @@ data/
 tables/
 __pycache__/
 .vscode/
+*.log
+*.pid
